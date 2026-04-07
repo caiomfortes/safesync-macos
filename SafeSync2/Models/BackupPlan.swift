@@ -15,7 +15,6 @@ struct BackupPlan: Identifiable, Codable {
     var sourceBookmarks: [Data]
     var destinationBookmarks: Data
     
-    
     init(name: String, sourceBookmarks: [Data], destinationBookmarks: Data){
         self.id = UUID()
         self.name = name
