@@ -9,10 +9,6 @@ struct BackupPlan: Identifiable, Codable {
     var lastRunAt: Date?
     var isMirrorMode: Bool
     
-<<<<<<< HEAD
-    init(name: String, sourceBookmarks: [Data], destinationBookmarks: Data){
-        self.id = UUID()
-=======
     init(
         id: UUID = UUID(),
         name: String,
@@ -23,7 +19,6 @@ struct BackupPlan: Identifiable, Codable {
         isMirrorMode: Bool = false
     ) {
         self.id = id
->>>>>>> etapa2
         self.name = name
         self.sourceBookmarks = sourceBookmarks
         self.destinationBookmark = destinationBookmark
@@ -137,6 +132,18 @@ extension BackupPlan {
             createdAt: self.createdAt,
             lastRunAt: date,
             isMirrorMode: self.isMirrorMode
+        )
+    }
+    
+    func withUpdatedMirrorMode(_ newMode: Bool) -> BackupPlan {
+        BackupPlan(
+            id: self.id,
+            name: self.name,
+            sourceBookmarks: self.sourceBookmarks,
+            destinationBookmark: self.destinationBookmark,
+            createdAt: self.createdAt,
+            lastRunAt: self.lastRunAt,
+            isMirrorMode: newMode
         )
     }
 }

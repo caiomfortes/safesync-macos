@@ -41,6 +41,8 @@ enum VolumeInspector {
                 url = source
             case .skipUnchanged:
                 continue
+            case .removeOrphan:
+                continue
             }
             
             if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {

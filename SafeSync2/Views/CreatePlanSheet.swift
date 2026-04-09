@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct CreatePlanSheet: View {
+    let isMirrorMode: Bool
     let onCancel: () -> Void
-    let onCreate: (String, [URL], URL) -> Void
+    let onCreate: (String, [URL], URL, Bool) -> Void
     
     @State private var name: String = ""
     @State private var sourceURLs: [URL] = []
@@ -16,12 +17,18 @@ struct CreatePlanSheet: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Novo plano de backup")
-                .font(.title2)
-                .bold()
+            HStack(spacing: 10) {
+                Image(systemName: isMirrorMode ? "arrow.triangle.2.circlepath" : "externaldrive.badge.plus")
+                    .font(.title2)
+                    .foregroundStyle(isMirrorMode ? .orange : .blue)
+                
+                Text(isMirrorMode ? "Novo plano de sincronização" : "Novo plano de backup")
+                    .font(.title2)
+                    .bold()
+            }
             
             Form {
-                TextField("Nome", text: $name, prompt: Text("Ex: Backup de Documentos"))
+                TextField("Nome", text: $name, prompt: Text(isMirrorMode ? "Ex: Sincronizar Documentos" : "Ex: Backup de Documentos"))
                 
                 Section("Pastas fonte") {
                     if sourceURLs.isEmpty {
@@ -87,7 +94,7 @@ struct CreatePlanSheet: View {
                 
                 Button("Criar") {
                     guard let destinationURL else { return }
-                    onCreate(name, sourceURLs, destinationURL)
+                    onCreate(name, sourceURLs, destinationURL, isMirrorMode)
                 }
                 .keyboardShortcut(.return)
                 .buttonStyle(.borderedProminent)
@@ -100,5 +107,9 @@ struct CreatePlanSheet: View {
 }
 
 #Preview {
-    CreatePlanSheet(onCancel: {}, onCreate: { _, _, _ in })
+    CreatePlanSheet(
+        isMirrorMode: false,
+        onCancel: {},
+        onCreate: { _, _, _, _ in }
+    )
 }

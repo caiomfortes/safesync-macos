@@ -38,13 +38,11 @@ final class BackupCoordinator {
             return
         }
         
-        let initialPhase: BackupProgress.Phase = canStartNewExecution() ? .analyzing : .queued
-        
         let execution = BackupExecution(
             planID: plan.id,
             planName: plan.name,
             progress: BackupProgress(
-                phase: initialPhase,
+                phase: .analyzing,
                 filesProcessed: 0,
                 filesTotal: 0,
                 bytesProcessed: 0,
@@ -55,13 +53,11 @@ final class BackupCoordinator {
         
         executions.append(execution)
         
-        if case .analyzing = initialPhase {
-            let task = Task { [weak self] in
-                guard let self else { return }
-                await self.runAnalysis(executionID: execution.id, plan: plan)
-            }
-            runningTasks[execution.id] = task
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runAnalysis(executionID: execution.id, plan: plan)
         }
+        runningTasks[execution.id] = task
     }
     
     func confirmExecution(executionID: UUID) {
@@ -69,10 +65,24 @@ final class BackupCoordinator {
         guard let plan = store.plans.first(where: { $0.id == executions[index].planID }) else { return }
         guard let previewData = executions[index].previewData else { return }
         
-        executions[index].progress.phase = .copying
-        executions[index].progress.filesTotal = previewData.result.newFiles.count + previewData.result.updatedFiles.count
-        executions[index].progress.bytesTotal = previewData.totalSize ?? 0
-        executions[index].progress.startedAt = Date()
+        if canStartNewExecution() {
+            startCopying(executionIndex: index, plan: plan, previewData: previewData)
+        } else {
+            executions[index].progress.phase = .queued
+        }
+    }
+
+    private func startCopying(
+        executionIndex: Int,
+        plan: BackupPlan,
+        previewData: BackupPreviewData
+    ) {
+        let executionID = executions[executionIndex].id
+        
+        executions[executionIndex].progress.phase = .copying
+        executions[executionIndex].progress.filesTotal = previewData.result.newFiles.count + previewData.result.updatedFiles.count + previewData.result.orphans.count
+        executions[executionIndex].progress.bytesTotal = previewData.totalSize ?? 0
+        executions[executionIndex].progress.startedAt = Date()
         
         let task = Task { [weak self] in
             guard let self else { return }
@@ -126,7 +136,8 @@ final class BackupCoordinator {
             let engine = BackupEngine()
             let result = await engine.analyze(
                 sources: resolved.sourceURLs,
-                destination: resolved.destinationURL
+                destination: resolved.destinationURL,
+                isMirrorMode: plan.isMirrorMode
             )
             
             let sameVolume = resolved.sourceURLs.allSatisfy { source in
@@ -253,9 +264,9 @@ final class BackupCoordinator {
     private func activeExecutionCount() -> Int {
         executions.filter { execution in
             switch execution.progress.phase {
-            case .analyzing, .copying, .finishing:
+            case .copying, .finishing:
                 return true
-            case .queued, .waitingConfirmation, .completed, .failed, .cancelled:
+            case .queued, .analyzing, .waitingConfirmation, .completed, .failed, .cancelled:
                 return false
             }
         }.count
@@ -284,14 +295,11 @@ final class BackupCoordinator {
             return
         }
         
-        executions[nextIndex].progress.phase = .analyzing
-        executions[nextIndex].progress.startedAt = Date()
-        
-        let executionID = execution.id
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.runAnalysis(executionID: executionID, plan: plan)
+        guard let previewData = execution.previewData else {
+            executions.remove(at: nextIndex)
+            return
         }
-        runningTasks[executionID] = task
+        
+        startCopying(executionIndex: nextIndex, plan: plan, previewData: previewData)
     }
 }

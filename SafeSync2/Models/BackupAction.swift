@@ -11,6 +11,7 @@ enum BackupAction: Sendable {
     case copyNew(source: URL, sourceRoot: URL, relativePath: String)
     case updateExisting(source: URL, sourceRoot: URL, relativePath: String)
     case skipUnchanged(relativePath: String)
+    case removeOrphan(target: URL, relativePath: String)
 }
 
 struct BackupPlanResult: Sendable {
@@ -31,13 +32,17 @@ struct BackupPlanResult: Sendable {
     }
     
     var hasWork: Bool {
-        !newFiles.isEmpty || !updatedFiles.isEmpty
+        !newFiles.isEmpty || !updatedFiles.isEmpty || !orphans.isEmpty
+    }
+    var orphans: [BackupAction] {
+        actions.filter { if case .removeOrphan = $0 { return true } else { return false } }
     }
 }
 
 struct BackupExecutionReport: Sendable {
     var copied: Int
     var updated: Int
+    var orphansRemoved: Int
     var failures: [String]
 }
 

@@ -9,6 +9,9 @@ struct PlanDetailView: View {
     @State private var resolvedDestination: URL? = nil
     @State private var resolutionError: String? = nil
     @State private var editedName: String = ""
+    @State private var pendingConfirmExecutionID: UUID? = nil
+    @State private var sheetForceClose: Bool = false
+    @State private var showMirrorWarning: Bool = false
     
     private var execution: BackupExecution? {
         coordinator.execution(forPlanID: plan.id)
@@ -21,17 +24,28 @@ struct PlanDetailView: View {
     private var isPreviewPresented: Binding<Bool> {
         Binding(
             get: {
+                if sheetForceClose { return false }
                 if case .waitingConfirmation = execution?.progress.phase {
                     return true
                 }
                 return false
             },
-            set: { newValue in
-                if !newValue, let id = execution?.id {
-                    coordinator.cancelExecution(executionID: id)
-                }
+            set: { _ in
+                // não fazemos nada — o fechamento é controlado pelos botões da sheet
             }
         )
+    }
+    
+    private var buttonLabel: String {
+        guard let phase = execution?.progress.phase else { return "Iniciar backup" }
+        switch phase {
+        case .queued: return "Na fila..."
+        case .analyzing: return "Analisando..."
+        case .waitingConfirmation: return "Aguardando confirmação"
+        case .copying: return "Copiando..."
+        case .finishing: return "Finalizando..."
+        case .completed, .failed, .cancelled: return "Iniciar backup"
+        }
     }
     
     var body: some View {
@@ -68,10 +82,54 @@ struct PlanDetailView: View {
                         coordinator.cancelExecution(executionID: executionID)
                     },
                     onConfirm: {
-                        coordinator.confirmExecution(executionID: executionID)
+                        if previewData.result.orphans.isEmpty {
+                            coordinator.confirmExecution(executionID: executionID)
+                        } else {
+                            sheetForceClose = true
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(100))
+                                pendingConfirmExecutionID = executionID
+                            }
+                        }
                     }
                 )
             }
+        }
+        .alert(
+            "Confirmar remoção de arquivos?",
+            isPresented: Binding(
+                get: { pendingConfirmExecutionID != nil },
+                set: { if !$0 { pendingConfirmExecutionID = nil } }
+            ),
+            presenting: pendingConfirmExecutionID
+        ) { executionID in
+            Button("Cancelar", role: .cancel) {
+                pendingConfirmExecutionID = nil
+                sheetForceClose = false
+            }
+            Button("Continuar", role: .destructive) {
+                coordinator.confirmExecution(executionID: executionID)
+                pendingConfirmExecutionID = nil
+                sheetForceClose = false
+            }
+        } message: { _ in
+            if let count = execution?.previewData?.result.orphans.count {
+                Text("Esta operação vai mover \(count) arquivo(s) ou pasta(s) do destino para o Lixo. Você poderá recuperá-los do Lixo se mudar de ideia. Deseja continuar?")
+            }
+        }
+        .alert(
+            "Mudar para modo Sincronização?",
+            isPresented: $showMirrorWarning
+        ) {
+            Button("Cancelar", role: .cancel) {
+                showMirrorWarning = false
+            }
+            Button("Confirmar", role: .destructive) {
+                togglePlanMode()
+                showMirrorWarning = false
+            }
+        } message: {
+            Text("No modo Sincronização, qualquer arquivo ou pasta no destino que não exista nas fontes será movido para o Lixo na próxima execução. Tem certeza que deseja mudar?")
         }
     }
     
@@ -79,13 +137,33 @@ struct PlanDetailView: View {
     
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Nome do plano", text: $editedName)
-                .textFieldStyle(.plain)
-                .font(.largeTitle)
-                .bold()
-                .onSubmit {
-                    commitNameChange()
+            HStack(spacing: 10) {
+                TextField("Nome do plano", text: $editedName)
+                    .textFieldStyle(.plain)
+                    .font(.largeTitle)
+                    .bold()
+                    .onSubmit {
+                        commitNameChange()
+                    }
+                
+                if plan.isMirrorMode {
+                    Text("SINCRONIZAÇÃO")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.orange.opacity(0.15))
+                        .clipShape(Capsule())
+                } else {
+                    Text("BACKUP")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.blue.opacity(0.15))
+                        .clipShape(Capsule())
                 }
+            }
             
             HStack(spacing: 12) {
                 Label("Criado \(plan.createdAt.formatted(.relative(presentation: .named)))",
@@ -100,6 +178,23 @@ struct PlanDetailView: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            
+            Button {
+                if plan.isMirrorMode {
+                    togglePlanMode()
+                } else {
+                    showMirrorWarning = true
+                }
+            } label: {
+                Label(
+                    plan.isMirrorMode ? "Mudar para modo Backup" : "Mudar para modo Sincronização",
+                    systemImage: "arrow.triangle.swap"
+                )
+                .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .disabled(isRunning)
+            .padding(.top, 4)
         }
     }
     
@@ -205,8 +300,7 @@ struct PlanDetailView: View {
             Button {
                 coordinator.startAnalysis(for: plan)
             } label: {
-                Label(isRunning ? "Em execução..." : "Iniciar backup",
-                      systemImage: "play.fill")
+                Label(buttonLabel, systemImage: "play.fill")
                     .frame(minWidth: 140)
             }
             .buttonStyle(.borderedProminent)
@@ -235,7 +329,7 @@ struct PlanDetailView: View {
     private func statusContent(phase: BackupProgress.Phase) -> some View {
         switch phase {
         case .queued:
-            Text("Aguardando na fila...")
+            Text("Na fila — começa quando houver slot disponível")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         case .analyzing:
@@ -384,6 +478,11 @@ struct PlanDetailView: View {
         } catch {
             resolutionError = "Erro ao atualizar: \(error.localizedDescription)"
         }
+    }
+    
+    private func togglePlanMode() {
+        let updated = plan.withUpdatedMirrorMode(!plan.isMirrorMode)
+        store.updatePlan(updated)
     }
 }
 

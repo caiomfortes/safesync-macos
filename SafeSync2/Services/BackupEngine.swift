@@ -13,7 +13,11 @@ actor BackupEngine {
     private let fileManager = FileManager.default
     private let maxDepth = 255
     
-    func analyze(sources: [URL], destination: URL) async -> BackupPlanResult {
+    func analyze(
+        sources: [URL],
+        destination: URL,
+        isMirrorMode: Bool = false
+    ) async -> BackupPlanResult {
         let collector = AnalysisCollector()
         
         for sourceRoot in sources {
@@ -32,6 +36,30 @@ actor BackupEngine {
             )
         }
         
+        if isMirrorMode {
+            let hasAnyValidSource = collector.actions.contains { action in
+                switch action {
+                case .copyNew, .updateExisting, .skipUnchanged: return true
+                case .removeOrphan: return false
+                }
+            }
+            
+            if !hasAnyValidSource {
+                collector.errors.append("As fontes parecem vazias ou inacessíveis. Operação de sincronização cancelada por segurança.")
+                return BackupPlanResult(
+                    actions: [],
+                    skippedSymlinks: collector.skippedSymlinks,
+                    errors: collector.errors
+                )
+            }
+            
+            detectOrphans(
+                sources: sources,
+                destination: destination,
+                collector: collector
+            )
+        }
+        
         return BackupPlanResult(
             actions: collector.actions,
             skippedSymlinks: collector.skippedSymlinks,
@@ -46,6 +74,8 @@ actor BackupEngine {
         depth: Int,
         collector: AnalysisCollector
     ) {
+        if Task.isCancelled { return }
+        
         guard depth <= maxDepth else {
             collector.errors.append("Profundidade máxima excedida em \(source.path)")
             return
@@ -113,6 +143,128 @@ actor BackupEngine {
         }
     }
     
+    private func detectOrphans(
+        sources: [URL],
+        destination: URL,
+        collector: AnalysisCollector
+    ) {
+        var validPaths: Set<String> = []
+        
+        for sourceRoot in sources {
+            let destinationRoot = destinationRootPath(
+                for: sourceRoot,
+                allSources: sources,
+                destination: destination
+            )
+            
+            collectExpectedPaths(
+                source: sourceRoot,
+                sourceRoot: sourceRoot,
+                destinationRoot: destinationRoot,
+                depth: 0,
+                paths: &validPaths
+            )
+            
+            validPaths.insert(destinationRoot.path)
+        }
+        
+        for sourceRoot in sources {
+            let destinationRoot = destinationRootPath(
+                for: sourceRoot,
+                allSources: sources,
+                destination: destination
+            )
+            
+            if FileManager.default.fileExists(atPath: destinationRoot.path) {
+                findOrphans(
+                    in: destinationRoot,
+                    validPaths: validPaths,
+                    collector: collector
+                )
+            }
+        }
+    }
+
+    private func collectExpectedPaths(
+        source: URL,
+        sourceRoot: URL,
+        destinationRoot: URL,
+        depth: Int,
+        paths: inout Set<String>
+    ) {
+        if Task.isCancelled { return }
+        guard depth <= maxDepth else { return }
+        
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .isRegularFileKey]
+        
+        guard let values = try? source.resourceValues(forKeys: Set(keys)) else { return }
+        
+        if values.isSymbolicLink == true { return }
+        
+        if values.isDirectory == true {
+            paths.insert(destinationRoot.path)
+            
+            guard let children = try? fileManager.contentsOfDirectory(
+                at: source,
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles]
+            ) else { return }
+            
+            for child in children {
+                let childDestination = destinationRoot.appendingPathComponent(child.lastPathComponent)
+                collectExpectedPaths(
+                    source: child,
+                    sourceRoot: sourceRoot,
+                    destinationRoot: childDestination,
+                    depth: depth + 1,
+                    paths: &paths
+                )
+            }
+        } else if values.isRegularFile == true {
+            paths.insert(destinationRoot.path)
+        }
+    }
+
+    private func findOrphans(
+        in directory: URL,
+        validPaths: Set<String>,
+        collector: AnalysisCollector
+    ) {
+        if Task.isCancelled { return }
+        
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: keys,
+            options: []
+        ) else { return }
+        
+        for child in children {
+            if child.lastPathComponent.hasSuffix(".tmp") { continue }
+            if child.lastPathComponent == ".DS_Store" { continue }
+            
+            let childPath = child.path
+            
+            guard let values = try? child.resourceValues(forKeys: Set(keys)) else { continue }
+            
+            if values.isSymbolicLink == true { continue }
+            
+            if validPaths.contains(childPath) {
+                if values.isDirectory == true {
+                    findOrphans(
+                        in: child,
+                        validPaths: validPaths,
+                        collector: collector
+                    )
+                }
+            } else {
+                let relative = child.lastPathComponent
+                collector.actions.append(.removeOrphan(target: child, relativePath: relative))
+            }
+        }
+    }
+    
     private func relativePath(from root: URL, to file: URL) -> String {
         let rootComponents = root.pathComponents
         let fileComponents = file.pathComponents
@@ -141,11 +293,12 @@ actor BackupEngine {
     ) async -> BackupExecutionReport {
         var copied = 0
         var updated = 0
+        var orphansRemoved = 0
         let collector = ExecutionCollector()
         
         let actionsToProcess = result.actions.filter { action in
             switch action {
-            case .copyNew, .updateExisting: return true
+            case .copyNew, .updateExisting, .removeOrphan: return true
             case .skipUnchanged: return false
             }
         }
@@ -184,6 +337,11 @@ actor BackupEngine {
                     updated += 1
                 }
                 
+            case .removeOrphan(let target, _):
+                if moveToTrash(url: target, collector: collector) {
+                    orphansRemoved += 1
+                }
+                
             case .skipUnchanged:
                 continue
             }
@@ -197,8 +355,20 @@ actor BackupEngine {
         return BackupExecutionReport(
             copied: copied,
             updated: updated,
+            orphansRemoved: orphansRemoved,
             failures: collector.failures
         )
+    }
+
+    private func moveToTrash(url: URL, collector: ExecutionCollector) -> Bool {
+        do {
+            var resultingURL: NSURL? = nil
+            try fileManager.trashItem(at: url, resultingItemURL: &resultingURL)
+            return true
+        } catch {
+            collector.failures.append("Falha ao mover para o Lixo \(url.path): \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func bytesOfAction(_ action: BackupAction) -> Int64 {
@@ -207,6 +377,7 @@ actor BackupEngine {
         case .copyNew(let source, _, _): url = source
         case .updateExisting(let source, _, _): url = source
         case .skipUnchanged: return 0
+        case .removeOrphan: return 0
         }
         
         if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {

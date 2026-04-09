@@ -4,43 +4,77 @@ struct ContentView: View {
     let store: PlanStore
     let coordinator: BackupCoordinator
     
-    @State private var isCreatingPlan = false
+    @State private var isChoosingPlanType = false
+    @State private var pendingPlanType: PlanType? = nil
     @State private var planPendingDeletion: BackupPlan? = nil
     
+    private enum PlanType {
+        case backup
+        case mirror
+    }
+    
     var body: some View {
-        Group {
-            if store.plans.isEmpty {
-                EmptyStateView(onCreatePlan: {
-                    isCreatingPlan = true
-                })
-            } else {
-                NavigationSplitView {
-                    PlanSidebar(
-                        store: store,
-                        onCreatePlan: { isCreatingPlan = true },
-                        onDeletePlan: { plan in planPendingDeletion = plan }
-                    )
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-                } detail: {
-                    if let selected = store.selectedPlan {
-                        PlanDetailView(plan: selected, store: store, coordinator: coordinator)
-                    } else {
-                        Text("Selecione um plano")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 0) {
+            Group {
+                if store.plans.isEmpty {
+                    EmptyStateView(onCreatePlan: {
+                        isChoosingPlanType = true
+                    })
+                } else {
+                    NavigationSplitView {
+                        PlanSidebar(
+                            store: store,
+                            onCreatePlan: { isChoosingPlanType = true },
+                            onDeletePlan: { plan in planPendingDeletion = plan }
+                        )
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                    } detail: {
+                        if let selected = store.selectedPlan {
+                            PlanDetailView(plan: selected, store: store, coordinator: coordinator)
+                        } else {
+                            Text("Selecione um plano")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
                 }
             }
+            
+            GlobalStatusBar(coordinator: coordinator, store: store)
+                .animation(.easeInOut(duration: 0.25), value: coordinator.executions.count)
         }
         .frame(minWidth: 900, minHeight: 600)
-        .sheet(isPresented: $isCreatingPlan) {
-            CreatePlanSheet(
-                onCancel: { isCreatingPlan = false },
-                onCreate: { name, sources, destination in
-                    createPlan(name: name, sources: sources, destination: destination)
+        .sheet(isPresented: $isChoosingPlanType) {
+            PlanTypeChooserSheet(
+                onCancel: {
+                    isChoosingPlanType = false
+                },
+                onChooseBackup: {
+                    isChoosingPlanType = false
+                    pendingPlanType = .backup
+                },
+                onChooseMirror: {
+                    isChoosingPlanType = false
+                    pendingPlanType = .mirror
                 }
             )
+        }
+        .sheet(isPresented: Binding(
+            get: { pendingPlanType != nil },
+            set: { if !$0 { pendingPlanType = nil } }
+        )) {
+            if let type = pendingPlanType {
+                CreatePlanSheet(
+                    isMirrorMode: type == .mirror,
+                    onCancel: {
+                        pendingPlanType = nil
+                    },
+                    onCreate: { name, sources, destination, isMirror in
+                        createPlan(name: name, sources: sources, destination: destination, isMirror: isMirror)
+                    }
+                )
+            }
         }
         .alert(
             "Apagar plano?",
@@ -62,15 +96,16 @@ struct ContentView: View {
         }
     }
     
-    private func createPlan(name: String, sources: [URL], destination: URL) {
+    private func createPlan(name: String, sources: [URL], destination: URL, isMirror: Bool) {
         do {
             let plan = try BackupPlan.create(
                 name: name,
                 sourceURLs: sources,
-                destinationURL: destination
+                destinationURL: destination,
+                isMirrorMode: isMirror
             )
             store.addPlan(plan)
-            isCreatingPlan = false
+            pendingPlanType = nil
         } catch {
             print("Erro ao criar plano: \(error.localizedDescription)")
         }

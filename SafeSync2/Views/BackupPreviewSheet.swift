@@ -90,12 +90,28 @@ struct BackupPreviewSheet: View {
                     label: "A atualizar",
                     count: result.updatedFiles.count
                 )
+                if !result.orphans.isEmpty {
+                    fileListSection(
+                        title: "Arquivos a remover (vão para o Lixo)",
+                        icon: "trash.circle.fill",
+                        color: .red,
+                        actions: result.orphans
+                    )
+                }
                 summaryRow(
                     icon: "equal.circle.fill",
                     color: .secondary,
                     label: "Inalterados",
                     count: result.unchangedCount
                 )
+                if !result.orphans.isEmpty {
+                    summaryRow(
+                        icon: "trash.circle.fill",
+                        color: .red,
+                        label: "A mover para o Lixo",
+                        count: result.orphans.count
+                    )
+                }
                 if let totalSize = data.totalSize {
                     summaryRow(
                         icon: "internaldrive.fill",
@@ -291,6 +307,7 @@ struct BackupPreviewSheet: View {
         case .copyNew(_, _, let path): return path
         case .updateExisting(_, _, let path): return path
         case .skipUnchanged(let path): return path
+        case .removeOrphan(let target, _): return target.path
         }
     }
 }
