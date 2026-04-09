@@ -8,49 +8,46 @@
 import Foundation
 
 
-final class BackupEngine {
+actor BackupEngine {
     
     private let fileManager = FileManager.default
     private let maxDepth = 255
     
     func analyze(sources: [URL], destination: URL) async -> BackupPlanResult {
-        var actions: [BackupAction] = []
-        var skippedSymlinks: [URL] = []
-        var errors: [String] = []
+        let collector = AnalysisCollector()
         
         for sourceRoot in sources {
-            let sourceName = sourceRoot.lastPathComponent
-            let destinationRoot = destination.appendingPathComponent(sourceName)
+            let destinationRoot = destinationRootPath(
+                for: sourceRoot,
+                allSources: sources,
+                destination: destination
+            )
             
             walk(
                 source: sourceRoot,
                 sourceRoot: sourceRoot,
                 destinationRoot: destinationRoot,
                 depth: 0,
-                actions: &actions,
-                skippedSymlinks: &skippedSymlinks,
-                errors: &errors
+                collector: collector
             )
         }
         
         return BackupPlanResult(
-            actions: actions,
-            skippedSymlinks: skippedSymlinks,
-            errors: errors
+            actions: collector.actions,
+            skippedSymlinks: collector.skippedSymlinks,
+            errors: collector.errors
         )
     }
-    
+
     private func walk(
         source: URL,
         sourceRoot: URL,
         destinationRoot: URL,
         depth: Int,
-        actions: inout [BackupAction],
-        skippedSymlinks: inout [URL],
-        errors: inout [String]
+        collector: AnalysisCollector
     ) {
         guard depth <= maxDepth else {
-            errors.append("Profundidade máxima excedida em \(source.path)")
+            collector.errors.append("Profundidade máxima excedida em \(source.path)")
             return
         }
         
@@ -65,12 +62,12 @@ final class BackupEngine {
         do {
             values = try source.resourceValues(forKeys: Set(keys))
         } catch {
-            errors.append("Não consegui ler \(source.path): \(error.localizedDescription)")
+            collector.errors.append("Não consegui ler \(source.path): \(error.localizedDescription)")
             return
         }
         
         if values.isSymbolicLink == true {
-            skippedSymlinks.append(source)
+            collector.skippedSymlinks.append(source)
             return
         }
         
@@ -83,7 +80,7 @@ final class BackupEngine {
                     options: [.skipsHiddenFiles]
                 )
             } catch {
-                errors.append("Não consegui listar \(source.path): \(error.localizedDescription)")
+                collector.errors.append("Não consegui listar \(source.path): \(error.localizedDescription)")
                 return
             }
             
@@ -95,9 +92,7 @@ final class BackupEngine {
                     sourceRoot: sourceRoot,
                     destinationRoot: childDestination,
                     depth: depth + 1,
-                    actions: &actions,
-                    skippedSymlinks: &skippedSymlinks,
-                    errors: &errors
+                    collector: collector
                 )
             }
             return
@@ -108,12 +103,12 @@ final class BackupEngine {
             
             if fileManager.fileExists(atPath: destinationRoot.path) {
                 if isSourceNewer(source: source, destination: destinationRoot) {
-                    actions.append(.updateExisting(source: source, sourceRoot: sourceRoot, relativePath: relativePath))
+                    collector.actions.append(.updateExisting(source: source, sourceRoot: sourceRoot, relativePath: relativePath))
                 } else {
-                    actions.append(.skipUnchanged(relativePath: relativePath))
+                    collector.actions.append(.skipUnchanged(relativePath: relativePath))
                 }
             } else {
-                actions.append(.copyNew(source: source, sourceRoot: sourceRoot, relativePath: relativePath))
+                collector.actions.append(.copyNew(source: source, sourceRoot: sourceRoot, relativePath: relativePath))
             }
         }
     }
@@ -137,44 +132,96 @@ final class BackupEngine {
         }
     }
     
-    func execute(result: BackupPlanResult, destination: URL) async -> BackupExecutionReport {
+    func execute(
+        result: BackupPlanResult,
+        sources: [URL],
+        destination: URL,
+        totalBytes: Int64,
+        progressHandler: (@Sendable (Int, Int64) -> Void)? = nil
+    ) async -> BackupExecutionReport {
         var copied = 0
         var updated = 0
-        var failed: [String] = []
+        let collector = ExecutionCollector()
         
-        for action in result.actions {
+        let actionsToProcess = result.actions.filter { action in
+            switch action {
+            case .copyNew, .updateExisting: return true
+            case .skipUnchanged: return false
+            }
+        }
+        
+        var filesProcessed = 0
+        var bytesProcessed: Int64 = 0
+        
+        for action in actionsToProcess {
+            if Task.isCancelled {
+                collector.failures.append("Operação cancelada pelo usuário")
+                break
+            }
+            
+            let actionBytes = bytesOfAction(action)
+            
             switch action {
             case .copyNew(let source, let sourceRoot, let relativePath):
-                let target = destination
-                    .appendingPathComponent(sourceRoot.lastPathComponent)
-                    .appendingPathComponent(relativePath)
-                if atomicCopy(from: source, to: target, errors: &failed) {
+                let destinationRoot = destinationRootPath(
+                    for: sourceRoot,
+                    allSources: sources,
+                    destination: destination
+                )
+                let target = destinationRoot.appendingPathComponent(relativePath)
+                if atomicCopy(from: source, to: target, collector: collector) {
                     copied += 1
                 }
                 
             case .updateExisting(let source, let sourceRoot, let relativePath):
-                let target = destination
-                    .appendingPathComponent(sourceRoot.lastPathComponent)
-                    .appendingPathComponent(relativePath)
-                if atomicCopy(from: source, to: target, errors: &failed) {
+                let destinationRoot = destinationRootPath(
+                    for: sourceRoot,
+                    allSources: sources,
+                    destination: destination
+                )
+                let target = destinationRoot.appendingPathComponent(relativePath)
+                if atomicCopy(from: source, to: target, collector: collector) {
                     updated += 1
                 }
                 
             case .skipUnchanged:
                 continue
             }
+            
+            filesProcessed += 1
+            bytesProcessed += actionBytes
+            
+            progressHandler?(filesProcessed, bytesProcessed)
         }
         
-        return BackupExecutionReport(copied: copied, updated: updated, failures: failed)
+        return BackupExecutionReport(
+            copied: copied,
+            updated: updated,
+            failures: collector.failures
+        )
     }
 
-    private func atomicCopy(from source: URL, to target: URL, errors: inout [String]) -> Bool {
+    private func bytesOfAction(_ action: BackupAction) -> Int64 {
+        let url: URL
+        switch action {
+        case .copyNew(let source, _, _): url = source
+        case .updateExisting(let source, _, _): url = source
+        case .skipUnchanged: return 0
+        }
+        
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+            return Int64(size)
+        }
+        return 0
+    }
+
+    private func atomicCopy(from source: URL, to target: URL, collector: ExecutionCollector) -> Bool {
         let parent = target.deletingLastPathComponent()
         
         do {
             try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         } catch {
-            errors.append("Não criou diretório \(parent.path): \(error.localizedDescription)")
+            collector.failures.append("Não criou diretório \(parent.path): \(error.localizedDescription)")
             return false
         }
         
@@ -187,7 +234,7 @@ final class BackupEngine {
         do {
             try fileManager.copyItem(at: source, to: tempTarget)
         } catch {
-            errors.append("Falha ao copiar \(source.path): \(error.localizedDescription)")
+            collector.failures.append("Falha ao copiar \(source.path): \(error.localizedDescription)")
             return false
         }
         
@@ -199,9 +246,36 @@ final class BackupEngine {
             }
             return true
         } catch {
-            errors.append("Falha ao finalizar \(target.path): \(error.localizedDescription)")
+            collector.failures.append("Falha ao finalizar \(target.path): \(error.localizedDescription)")
             try? fileManager.removeItem(at: tempTarget)
             return false
         }
     }
+
+    
+    
+    private func destinationRootPath(
+        for sourceRoot: URL,
+        allSources: [URL],
+        destination: URL
+    ) -> URL {
+        if allSources.count == 1 {
+            return destination
+        } else {
+            return destination.appendingPathComponent(sourceRoot.lastPathComponent)
+        }
+    }
+    
+    private final class AnalysisCollector {
+        var actions: [BackupAction] = []
+        var skippedSymlinks: [URL] = []
+        var errors: [String] = []
+    }
+
+    private final class ExecutionCollector {
+        var failures: [String] = []
+    }
 }
+
+
+

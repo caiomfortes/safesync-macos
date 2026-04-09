@@ -1,116 +1,84 @@
-//
-//  ContentView.swift
-//  SafeSync2
-//
-//  Created by Caio Gabriel de Moura Fortes on 07/04/26.
-//
-
 import SwiftUI
 
-
 struct ContentView: View {
-    @State private var sourceURLs: [URL] = []
-    @State private var destinationURL: URL? = nil
-    @State private var statusMessage: String = "Pronto"
+    let store: PlanStore
+    let coordinator: BackupCoordinator
     
+    @State private var isCreatingPlan = false
+    @State private var planPendingDeletion: BackupPlan? = nil
     
-    var body: some View{
-        VStack(alignment: .leading, spacing: 16){
-            Text("SafeSync")
-                .font(.largeTitle)
-                .bold()
-            
-            GroupBox("Pastas Fonte"){
-                VStack(){
-                    if sourceURLs.isEmpty {
-                        Text("Nenhuma pasta adicionada")
+    var body: some View {
+        Group {
+            if store.plans.isEmpty {
+                EmptyStateView(onCreatePlan: {
+                    isCreatingPlan = true
+                })
+            } else {
+                NavigationSplitView {
+                    PlanSidebar(
+                        store: store,
+                        onCreatePlan: { isCreatingPlan = true },
+                        onDeletePlan: { plan in planPendingDeletion = plan }
+                    )
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                } detail: {
+                    if let selected = store.selectedPlan {
+                        PlanDetailView(plan: selected, store: store, coordinator: coordinator)
+                    } else {
+                        Text("Selecione um plano")
+                            .font(.title3)
                             .foregroundStyle(.secondary)
-                    } else{
-                        ForEach(sourceURLs, id: \.self) { url in
-                            Text(url.path)
-                                .font(.system(.body, design: .monospaced))
-                        }
-                    }
-                    
-                    Button("+ Adicionar Pasta Fonte"){
-                        addSource()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
             }
-            
-            
-            GroupBox("Destino"){
-                VStack(){
-                    if let destinationURL {
-                        Text(destinationURL.path)
-                            .font(.system(.body, design: .monospaced))
-                    } else{
-                        Text("Nenhum destino selecionado")
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("Selecionar Destino"){
-                        pickDeastination()
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-            }
-            
-            Button("Iniciar Backup"){
-                Task {
-                    await runBackup()
-                }
-            }
-            
-            
-            Text(statusMessage)
-                .foregroundStyle(.secondary)
-            
-            Spacer()
         }
-        .padding()
-        .frame(minWidth: 600, minHeight: 300)
-    }
-    
-    
-    private func addSource(){
-        if let url = FolderPicker.pickerFolder(prompt: "Escolha uma pasta fonte"){
-            sourceURLs.append(url)
+        .frame(minWidth: 900, minHeight: 600)
+        .sheet(isPresented: $isCreatingPlan) {
+            CreatePlanSheet(
+                onCancel: { isCreatingPlan = false },
+                onCreate: { name, sources, destination in
+                    createPlan(name: name, sources: sources, destination: destination)
+                }
+            )
+        }
+        .alert(
+            "Apagar plano?",
+            isPresented: Binding(
+                get: { planPendingDeletion != nil },
+                set: { if !$0 { planPendingDeletion = nil } }
+            ),
+            presenting: planPendingDeletion
+        ) { plan in
+            Button("Apagar", role: .destructive) {
+                store.removePlan(id: plan.id)
+                planPendingDeletion = nil
+            }
+            Button("Cancelar", role: .cancel) {
+                planPendingDeletion = nil
+            }
+        } message: { plan in
+            Text("Tem certeza que deseja apagar o plano \"\(plan.name)\"? Essa ação não pode ser desfeita. Os arquivos já copiados no destino não serão afetados.")
         }
     }
     
-    private func pickDeastination(){
-        if let url = FolderPicker.pickerFolder(prompt: "Escolha um destino"){
-            destinationURL = url
+    private func createPlan(name: String, sources: [URL], destination: URL) {
+        do {
+            let plan = try BackupPlan.create(
+                name: name,
+                sourceURLs: sources,
+                destinationURL: destination
+            )
+            store.addPlan(plan)
+            isCreatingPlan = false
+        } catch {
+            print("Erro ao criar plano: \(error.localizedDescription)")
         }
     }
-    
-    
-    
-    private func runBackup() async {
-        guard let destinationURL else { return }
-        
-        // Ativa acesso às pastas (se viessem de bookmarks, seria necessário)
-        statusMessage = "Analisando..."
-        
-        let engine = BackupEngine()
-        let result = await engine.analyze(sources: sourceURLs, destination: destinationURL)
-        
-        statusMessage = "Copiando \(result.actions.count) itens..."
-        
-        let report = await engine.execute(result: result, destination: destinationURL)
-        
-        statusMessage = "✅ Concluído. \(report.copied) novos, \(report.updated) atualizados, \(report.failures.count) falhas."
-    }
-    
 }
 
-
-
-
-
 #Preview {
-    ContentView()
+    let store = PlanStore()
+    let coordinator = BackupCoordinator(store: store)
+    return ContentView(store: store, coordinator: coordinator)
 }
