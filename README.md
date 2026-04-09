@@ -34,14 +34,6 @@ SafeSync is a backup tool designed around two principles: **safety** (never lose
 
 SafeSync is not currently signed with a paid Apple Developer ID. macOS shows a warning the first time you try to open unsigned apps, even when they're safe. Right-clicking and choosing Open bypasses this for that specific app. You only need to do this once.
 
-If you're uncomfortable running unsigned apps, you can build SafeSync from source (see below).
-
-## Building from source
-
-1. Clone this repository
-2. Open `SafeSync2.xcodeproj` in Xcode 15 or later
-3. Cmd+R to build and run
-
 ## Reporting bugs and feedback
 
 - For bugs: [open an issue](../../issues/new?template=bug_report.md) using the bug template
