@@ -1,11 +1,3 @@
-//
-//  GlobalStatusBar.swift
-//  SafeSync2
-//
-//  Created by Caio Gabriel de Moura Fortes on 08/04/26.
-//
-
-
 import SwiftUI
 
 struct GlobalStatusBar: View {
@@ -28,12 +20,12 @@ struct GlobalStatusBar: View {
             VStack(spacing: 0) {
                 Divider()
                 
-                HStack(spacing: 16) {
+                HStack(spacing: DesignSpacing.lg) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(Color.dsAccent)
                         .font(.title3)
                     
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: DesignSpacing.sm) {
                         ForEach(visibleExecutions) { execution in
                             ExecutionRow(
                                 execution: execution,
@@ -44,13 +36,18 @@ struct GlobalStatusBar: View {
                                     store.selectPlan(id: execution.planID)
                                 }
                             )
+                            .transition(.asymmetric(
+                                        insertion: .move(edge: .leading).combined(with: .opacity),
+                                        removal: .opacity
+                                    ))
                         }
                     }
+                    .animation(.easeInOut(duration: 0.25), value: visibleExecutions.count)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.bar)
+                .padding(.horizontal, DesignSpacing.lg)
+                .padding(.vertical, DesignSpacing.md)
+                .background(Color.dsSurfacePrimary)
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
@@ -63,12 +60,11 @@ private struct ExecutionRow: View {
     let onSelect: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DesignSpacing.md) {
             Button(action: onSelect) {
                 Text(execution.planName)
-                    .font(.callout)
-                    .bold()
-                    .foregroundStyle(.primary)
+                    .font(DesignFont.headline)
+                    .foregroundStyle(Color.dsTextPrimary)
             }
             .buttonStyle(.plain)
             
@@ -77,28 +73,29 @@ private struct ExecutionRow: View {
             if showsProgress {
                 ProgressView(value: execution.progress.byteFraction)
                     .progressViewStyle(.linear)
+                    .tint(Color.dsAccent)
                     .frame(maxWidth: 200)
                 
                 Text("\(Int(execution.progress.byteFraction * 100))%")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(DesignFont.caption.monospacedDigit())
+                    .foregroundStyle(Color.dsTextSecondary)
                     .frame(width: 36, alignment: .trailing)
             }
             
             if let remaining = remainingText {
                 Text(remaining)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(DesignFont.caption.monospacedDigit())
+                    .foregroundStyle(Color.dsTextSecondary)
             }
             
             Spacer()
             
             Button(action: onCancel) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.dsTextSecondary)
             }
             .buttonStyle(.plain)
-            .help("Cancelar")
+            .help("Cancel")
         }
     }
     
@@ -120,21 +117,21 @@ private struct ExecutionRow: View {
     private var phaseLabel: some View {
         switch execution.progress.phase {
         case .queued:
-            Text("na fila")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("queued")
+                .font(DesignFont.caption)
+                .foregroundStyle(Color.dsTextSecondary)
         case .analyzing:
-            Text("analisando")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("analyzing")
+                .font(DesignFont.caption)
+                .foregroundStyle(Color.dsTextSecondary)
         case .copying:
             Text("\(execution.progress.filesProcessed)/\(execution.progress.filesTotal)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(DesignFont.caption.monospacedDigit())
+                .foregroundStyle(Color.dsTextSecondary)
         case .finishing:
-            Text("finalizando")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("finishing")
+                .font(DesignFont.caption)
+                .foregroundStyle(Color.dsTextSecondary)
         default:
             EmptyView()
         }

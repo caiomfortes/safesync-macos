@@ -15,94 +15,125 @@ struct CreatePlanSheet: View {
         && destinationURL != nil
     }
     
+    private var accentColor: Color {
+        isMirrorMode ? Color.dsWarning : Color.dsAccent
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: DesignSpacing.lg) {
+            HStack(spacing: DesignSpacing.md) {
                 Image(systemName: isMirrorMode ? "arrow.triangle.2.circlepath" : "externaldrive.badge.plus")
-                    .font(.title2)
-                    .foregroundStyle(isMirrorMode ? .orange : .blue)
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(accentColor)
                 
-                Text(isMirrorMode ? "Novo plano de sincronização" : "Novo plano de backup")
-                    .font(.title2)
-                    .bold()
+                Text(isMirrorMode ? "New sync plan" : "New backup plan")
+                    .font(DesignFont.title)
+                    .foregroundStyle(Color.dsTextPrimary)
             }
             
             Form {
-                TextField("Nome", text: $name, prompt: Text(isMirrorMode ? "Ex: Sincronizar Documentos" : "Ex: Backup de Documentos"))
+                TextField(
+                    "Name",
+                    text: $name,
+                    prompt: Text(isMirrorMode ? "e.g. Sync Documents" : "e.g. Documents Backup")
+                )
+                .font(DesignFont.body)
                 
-                Section("Pastas fonte") {
+                Section {
                     if sourceURLs.isEmpty {
-                        Text("Nenhuma pasta selecionada")
-                            .foregroundStyle(.secondary)
+                        Text("No folders selected")
+                            .font(DesignFont.body)
+                            .foregroundStyle(Color.dsTextSecondary)
                     } else {
                         ForEach(sourceURLs, id: \.self) { url in
-                            HStack {
+                            HStack(spacing: DesignSpacing.sm) {
                                 Image(systemName: "folder")
+                                    .foregroundStyle(Color.dsAccent)
                                 Text(url.path)
+                                    .font(DesignFont.callout)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 Spacer()
-                                Button(role: .destructive) {
+                                Button {
                                     sourceURLs.removeAll { $0 == url }
                                 } label: {
-                                    Image(systemName: "minus.circle")
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(Color.dsDanger)
                                 }
                                 .buttonStyle(.plain)
-                                .foregroundStyle(.red)
                             }
                         }
                     }
                     
                     Button {
-                        if let url = FolderPicker.pickerFolder(prompt: "Escolha uma pasta fonte") {
+                        if let url = FolderPicker.pickerFolder(prompt: "Choose source folder") {
                             sourceURLs.append(url)
                         }
                     } label: {
-                        Label("Adicionar pasta", systemImage: "plus")
+                        Label("Add folder", systemImage: "plus")
+                            .font(DesignFont.body)
                     }
+                } header: {
+                    Text("Source folders")
+                        .font(DesignFont.headline)
+                        .foregroundStyle(Color.dsTextPrimary)
                 }
                 
-                Section("Destino") {
+                Section {
                     if let destinationURL {
-                        HStack {
+                        HStack(spacing: DesignSpacing.sm) {
                             Image(systemName: "externaldrive")
+                                .foregroundStyle(accentColor)
                             Text(destinationURL.path)
+                                .font(DesignFont.callout)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
                     } else {
-                        Text("Nenhum destino selecionado")
-                            .foregroundStyle(.secondary)
+                        Text("No destination selected")
+                            .font(DesignFont.body)
+                            .foregroundStyle(Color.dsTextSecondary)
                     }
                     
                     Button {
-                        if let url = FolderPicker.pickerFolder(prompt: "Escolha o destino") {
+                        if let url = FolderPicker.pickerFolder(prompt: "Choose destination") {
                             destinationURL = url
                         }
                     } label: {
-                        Label(destinationURL == nil ? "Selecionar destino" : "Alterar destino",
-                              systemImage: "externaldrive.badge.plus")
+                        Label(
+                            destinationURL == nil ? "Select destination" : "Change destination",
+                            systemImage: "externaldrive.badge.plus"
+                        )
+                        .font(DesignFont.body)
                     }
+                } header: {
+                    Text("Destination")
+                        .font(DesignFont.headline)
+                        .foregroundStyle(Color.dsTextPrimary)
                 }
             }
             .formStyle(.grouped)
             
-            HStack {
+            HStack(spacing: DesignSpacing.md) {
                 Spacer()
-                Button("Cancelar", action: onCancel)
-                    .keyboardShortcut(.escape)
                 
-                Button("Criar") {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.escape)
+                    .foregroundStyle(Color.dsTextSecondary)
+                
+                Button("Create") {
                     guard let destinationURL else { return }
                     onCreate(name, sourceURLs, destinationURL, isMirrorMode)
                 }
                 .keyboardShortcut(.return)
                 .buttonStyle(.borderedProminent)
+                .tint(accentColor)
                 .disabled(!canCreate)
             }
         }
-        .padding()
-        .frame(width: 560, height: 520)
+        .padding(DesignSpacing.xl)
+        .frame(width: 580, height: 540)
+        .background(Color.dsSurfaceSecondary)
     }
 }
 

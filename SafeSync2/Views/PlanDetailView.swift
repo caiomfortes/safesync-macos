@@ -4,7 +4,9 @@ struct PlanDetailView: View {
     let plan: BackupPlan
     let store: PlanStore
     let coordinator: BackupCoordinator
+    let historyStore: HistoryStore
     
+    @State private var showFullHistory: Bool = false
     @State private var resolvedSources: [URL] = []
     @State private var resolvedDestination: URL? = nil
     @State private var resolutionError: String? = nil
@@ -13,12 +15,24 @@ struct PlanDetailView: View {
     @State private var sheetForceClose: Bool = false
     @State private var showMirrorWarning: Bool = false
     
+    private var historyEntries: [HistoryEntry] {
+        historyStore.entries(forPlanID: plan.id)
+    }
+
+    private var visibleHistoryEntries: [HistoryEntry] {
+        showFullHistory ? historyEntries : Array(historyEntries.prefix(5))
+    }
+    
     private var execution: BackupExecution? {
         coordinator.execution(forPlanID: plan.id)
     }
     
     private var isRunning: Bool {
         coordinator.isRunning(planID: plan.id)
+    }
+    
+    private var accentColor: Color {
+        plan.isMirrorMode ? Color.dsWarning : Color.dsAccent
     }
     
     private var isPreviewPresented: Binding<Bool> {
@@ -30,27 +44,25 @@ struct PlanDetailView: View {
                 }
                 return false
             },
-            set: { _ in
-                // não fazemos nada — o fechamento é controlado pelos botões da sheet
-            }
+            set: { _ in }
         )
     }
     
     private var buttonLabel: String {
-        guard let phase = execution?.progress.phase else { return "Iniciar backup" }
+        guard let phase = execution?.progress.phase else { return String(localized: "Start backup") }
         switch phase {
-        case .queued: return "Na fila..."
-        case .analyzing: return "Analisando..."
-        case .waitingConfirmation: return "Aguardando confirmação"
-        case .copying: return "Copiando..."
-        case .finishing: return "Finalizando..."
-        case .completed, .failed, .cancelled: return "Iniciar backup"
+        case .queued: return String(localized: "In queue...")
+        case .analyzing: return String(localized: "Analyzing...")
+        case .waitingConfirmation: return String(localized: "Waiting for confirmation")
+        case .copying: return String(localized: "Copying...")
+        case .finishing: return String(localized: "Finishing...")
+        case .completed, .failed, .cancelled: return String(localized: "Start backup")
         }
     }
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: DesignSpacing.xl) {
                 header
                 
                 if let resolutionError {
@@ -64,16 +76,17 @@ struct PlanDetailView: View {
                 if let phase = execution?.progress.phase {
                     statusSection(phase: phase)
                 }
+                
+                if !historyEntries.isEmpty {
+                    historySection
+                }
             }
-            .padding(24)
+            .padding(DesignSpacing.xl)
         }
+        .background(Color.dsSurfaceSecondary)
         .navigationTitle(plan.name)
-        .onAppear {
-            loadPlan()
-        }
-        .onChange(of: plan.id) { _, _ in
-            loadPlan()
-        }
+        .onAppear { loadPlan() }
+        .onChange(of: plan.id) { _, _ in loadPlan() }
         .sheet(isPresented: isPreviewPresented) {
             if let previewData = execution?.previewData, let executionID = execution?.id {
                 BackupPreviewSheet(
@@ -96,88 +109,116 @@ struct PlanDetailView: View {
             }
         }
         .alert(
-            "Confirmar remoção de arquivos?",
+            "Confirm file removal?",
             isPresented: Binding(
                 get: { pendingConfirmExecutionID != nil },
                 set: { if !$0 { pendingConfirmExecutionID = nil } }
             ),
             presenting: pendingConfirmExecutionID
         ) { executionID in
-            Button("Cancelar", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 pendingConfirmExecutionID = nil
                 sheetForceClose = false
             }
-            Button("Continuar", role: .destructive) {
+            Button("Continue", role: .destructive) {
                 coordinator.confirmExecution(executionID: executionID)
                 pendingConfirmExecutionID = nil
                 sheetForceClose = false
             }
         } message: { _ in
             if let count = execution?.previewData?.result.orphans.count {
-                Text("Esta operação vai mover \(count) arquivo(s) ou pasta(s) do destino para o Lixo. Você poderá recuperá-los do Lixo se mudar de ideia. Deseja continuar?")
+                Text("This operation will move \(count) file(s) or folder(s) from the destination to the Trash. You can recover them from the Trash if you change your mind. Continue?")
             }
         }
         .alert(
-            "Mudar para modo Sincronização?",
+            "Switch to Sync mode?",
             isPresented: $showMirrorWarning
         ) {
-            Button("Cancelar", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 showMirrorWarning = false
             }
-            Button("Confirmar", role: .destructive) {
+            Button("Confirm", role: .destructive) {
                 togglePlanMode()
                 showMirrorWarning = false
             }
         } message: {
-            Text("No modo Sincronização, qualquer arquivo ou pasta no destino que não exista nas fontes será movido para o Lixo na próxima execução. Tem certeza que deseja mudar?")
+            Text("In Sync mode, any file or folder at the destination that doesn't exist in the sources will be moved to the Trash on the next run. Are you sure you want to switch?")
         }
     }
     
     // MARK: - Subviews
-    
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                TextField("Nome do plano", text: $editedName)
-                    .textFieldStyle(.plain)
-                    .font(.largeTitle)
-                    .bold()
-                    .onSubmit {
-                        commitNameChange()
-                    }
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: DesignSpacing.md) {
+            HStack(spacing: DesignSpacing.sm) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(Color.dsAccent)
+                Text("Recent history")
+                    .font(DesignFont.headline)
+                    .foregroundStyle(Color.dsTextPrimary)
                 
-                if plan.isMirrorMode {
-                    Text("SINCRONIZAÇÃO")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.orange)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.orange.opacity(0.15))
-                        .clipShape(Capsule())
-                } else {
-                    Text("BACKUP")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.blue.opacity(0.15))
-                        .clipShape(Capsule())
+                Spacer()
+                
+                Text("\(historyEntries.count)")
+                    .font(DesignFont.caption)
+                    .foregroundStyle(Color.dsTextSecondary)
+            }
+            
+            VStack(spacing: DesignSpacing.sm) {
+                ForEach(visibleHistoryEntries) { entry in
+                    HistoryRow(entry: entry)
                 }
             }
             
-            HStack(spacing: 12) {
-                Label("Criado \(plan.createdAt.formatted(.relative(presentation: .named)))",
-                      systemImage: "calendar")
+            if historyEntries.count > 5 {
+                Button {
+                    showFullHistory.toggle()
+                } label: {
+                    Text(showFullHistory ? "Show less" : "Show all (\(historyEntries.count))")
+                        .font(DesignFont.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dsAccent)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
+    }
+    
+    private var header: some View {
+        VStack(alignment: .leading, spacing: DesignSpacing.md) {
+            HStack(spacing: DesignSpacing.md) {
+                TextField("Plan name", text: $editedName)
+                    .textFieldStyle(.plain)
+                    .font(DesignFont.largeTitle)
+                    .foregroundStyle(Color.dsTextPrimary)
+                    .onSubmit { commitNameChange() }
                 
-                if let lastRun = plan.lastRunAt {
-                    Label("Último backup \(lastRun.formatted(.relative(presentation: .named)))",
-                          systemImage: "clock")
+                if plan.isMirrorMode {
+                    Text("SYNC")
+                        .tagStyle(color: Color.dsWarning, background: Color.dsWarningSoft)
                 } else {
-                    Label("Nunca executado", systemImage: "clock.badge.questionmark")
+                    Text("BACKUP")
+                        .tagStyle(color: Color.dsAccent, background: Color.dsAccentSoft)
                 }
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            
+            HStack(spacing: DesignSpacing.lg) {
+                Label(
+                    "Created \(plan.createdAt.formatted(.relative(presentation: .named)))",
+                    systemImage: "calendar"
+                )
+                
+                if let lastRun = plan.lastRunAt {
+                    Label(
+                        "Last backup \(lastRun.formatted(.relative(presentation: .named)))",
+                        systemImage: "clock"
+                    )
+                } else {
+                    Label("Never run", systemImage: "clock.badge.questionmark")
+                }
+            }
+            .font(DesignFont.caption)
+            .foregroundStyle(Color.dsTextSecondary)
             
             Button {
                 if plan.isMirrorMode {
@@ -187,44 +228,54 @@ struct PlanDetailView: View {
                 }
             } label: {
                 Label(
-                    plan.isMirrorMode ? "Mudar para modo Backup" : "Mudar para modo Sincronização",
+                    plan.isMirrorMode ? "Switch to Backup mode" : "Switch to Sync mode",
                     systemImage: "arrow.triangle.swap"
                 )
-                .font(.caption)
+                .font(DesignFont.caption)
             }
             .buttonStyle(.borderless)
+            .foregroundStyle(Color.dsTextSecondary)
             .disabled(isRunning)
-            .padding(.top, 4)
         }
     }
     
     private func errorBanner(message: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DesignSpacing.md) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.dsWarning)
             Text(message)
-                .font(.callout)
+                .font(DesignFont.body)
+                .foregroundStyle(Color.dsTextPrimary)
             Spacer()
         }
-        .padding(12)
-        .background(.orange.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(DesignSpacing.md)
+        .background(Color.dsWarningSoft)
+        .clipShape(RoundedRectangle(cornerRadius: DesignRadius.md))
     }
     
     private var sourcesSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignSpacing.md) {
+            HStack(spacing: DesignSpacing.sm) {
+                Image(systemName: "folder")
+                    .foregroundStyle(Color.dsAccent)
+                Text("Source folders")
+                    .font(DesignFont.headline)
+                    .foregroundStyle(Color.dsTextPrimary)
+            }
+            
+            VStack(alignment: .leading, spacing: DesignSpacing.sm) {
                 if resolvedSources.isEmpty {
-                    Text("Nenhuma pasta fonte")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
+                    Text("No source folders")
+                        .font(DesignFont.body)
+                        .foregroundStyle(Color.dsTextSecondary)
                 } else {
                     ForEach(resolvedSources, id: \.self) { url in
-                        HStack {
+                        HStack(spacing: DesignSpacing.sm) {
                             Image(systemName: "folder.fill")
-                                .foregroundStyle(.tint)
+                                .foregroundStyle(Color.dsAccent)
                             Text(url.path)
-                                .font(.system(.body, design: .monospaced))
+                                .font(DesignFont.mono)
+                                .foregroundStyle(Color.dsTextPrimary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer()
@@ -232,85 +283,92 @@ struct PlanDetailView: View {
                                 removeSource(url)
                             } label: {
                                 Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red.opacity(0.8))
+                                    .foregroundStyle(Color.dsDanger)
                             }
                             .buttonStyle(.plain)
                             .disabled(isRunning)
                         }
-                        .padding(.vertical, 2)
                     }
                 }
                 
                 Button {
                     addSource()
                 } label: {
-                    Label("Adicionar pasta fonte", systemImage: "plus")
+                    Label("Add source folder", systemImage: "plus")
+                        .font(DesignFont.body)
                 }
                 .buttonStyle(.borderless)
-                .padding(.top, 4)
+                .foregroundStyle(Color.dsAccent)
                 .disabled(isRunning)
+                .padding(.top, DesignSpacing.xs)
             }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Pastas fonte", systemImage: "folder")
-                .font(.headline)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
     }
     
     private var destinationSection: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DesignSpacing.md) {
+            HStack(spacing: DesignSpacing.sm) {
+                Image(systemName: "externaldrive")
+                    .foregroundStyle(accentColor)
+                Text("Destination")
+                    .font(DesignFont.headline)
+                    .foregroundStyle(Color.dsTextPrimary)
+            }
+            
+            VStack(alignment: .leading, spacing: DesignSpacing.sm) {
                 if let resolvedDestination {
-                    HStack {
+                    HStack(spacing: DesignSpacing.sm) {
                         Image(systemName: "externaldrive.fill")
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(accentColor)
                         Text(resolvedDestination.path)
-                            .font(.system(.body, design: .monospaced))
+                            .font(DesignFont.mono)
+                            .foregroundStyle(Color.dsTextPrimary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer()
                     }
-                    .padding(.vertical, 2)
                 } else {
-                    Text("Nenhum destino")
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
+                    Text("No destination")
+                        .font(DesignFont.body)
+                        .foregroundStyle(Color.dsTextSecondary)
                 }
                 
                 Button {
                     changeDestination()
                 } label: {
-                    Label("Alterar destino", systemImage: "arrow.triangle.2.circlepath")
+                    Label("Change destination", systemImage: "arrow.triangle.2.circlepath")
+                        .font(DesignFont.body)
                 }
                 .buttonStyle(.borderless)
-                .padding(.top, 4)
+                .foregroundStyle(accentColor)
                 .disabled(isRunning)
+                .padding(.top, DesignSpacing.xs)
             }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Label("Destino", systemImage: "externaldrive")
-                .font(.headline)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle()
     }
     
     private var actionSection: some View {
-        HStack {
+        HStack(spacing: DesignSpacing.md) {
             Button {
                 coordinator.startAnalysis(for: plan)
             } label: {
                 Label(buttonLabel, systemImage: "play.fill")
-                    .frame(minWidth: 140)
+                    .font(DesignFont.headline)
+                    .frame(minWidth: 160)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .tint(accentColor)
             .disabled(isRunning || resolvedSources.isEmpty || resolvedDestination == nil)
+            .keyboardShortcut("r", modifiers: [.command])
             
             if isRunning {
                 ProgressView()
                     .controlSize(.small)
-                    .padding(.leading, 4)
             }
             
             Spacer()
@@ -318,47 +376,50 @@ struct PlanDetailView: View {
     }
     
     private func statusSection(phase: BackupProgress.Phase) -> some View {
-        GroupBox {
+        VStack(alignment: .leading, spacing: 0) {
             statusContent(phase: phase)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
         }
+        .cardStyle()
     }
     
     @ViewBuilder
     private func statusContent(phase: BackupProgress.Phase) -> some View {
         switch phase {
         case .queued:
-            Text("Na fila — começa quando houver slot disponível")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Text("In queue — starts when a slot is available")
+                .font(DesignFont.body)
+                .foregroundStyle(Color.dsTextSecondary)
         case .analyzing:
-            Text("Analisando arquivos...")
-                .font(.callout)
+            Text("Analyzing files...")
+                .font(DesignFont.body)
+                .foregroundStyle(Color.dsTextPrimary)
         case .waitingConfirmation:
-            Text("Aguardando confirmação")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Text("Waiting for confirmation")
+                .font(DesignFont.body)
+                .foregroundStyle(Color.dsTextSecondary)
         case .copying:
             if let exec = execution {
-                Text("Copiando \(exec.progress.filesProcessed) de \(exec.progress.filesTotal)")
-                    .font(.callout)
+                Text("Copying \(exec.progress.filesProcessed) of \(exec.progress.filesTotal)")
+                    .font(DesignFont.body)
+                    .foregroundStyle(Color.dsTextPrimary)
             }
         case .finishing:
-            Text("Finalizando...")
-                .font(.callout)
+            Text("Finishing...")
+                .font(DesignFont.body)
+                .foregroundStyle(Color.dsTextPrimary)
         case .completed:
-            Label("✅ Concluído", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.callout)
+            Label("Completed", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Color.dsSuccess)
+                .font(DesignFont.body)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.callout)
+                .foregroundStyle(Color.dsDanger)
+                .font(DesignFont.body)
         case .cancelled:
-            Label("Cancelado", systemImage: "xmark.circle")
-                .foregroundStyle(.secondary)
-                .font(.callout)
+            Label("Cancelled", systemImage: "xmark.circle")
+                .foregroundStyle(Color.dsTextSecondary)
+                .font(DesignFont.body)
         }
     }
     
@@ -379,7 +440,7 @@ struct PlanDetailView: View {
         } catch {
             resolvedSources = []
             resolvedDestination = nil
-            resolutionError = "Não foi possível carregar as pastas deste plano. Pode ser necessário reselecioná-las."
+            resolutionError = String(localized: "Could not load this plan's folders. You may need to reselect them.")
         }
     }
     
@@ -413,7 +474,7 @@ struct PlanDetailView: View {
             )
             store.updatePlan(updated)
         } catch {
-            resolutionError = "Bookmarks desatualizados. Reselecione as pastas para continuar."
+            resolutionError = String(localized: "Stale bookmarks. Reselect folders to continue.")
         }
     }
     
@@ -428,7 +489,7 @@ struct PlanDetailView: View {
     }
     
     private func addSource() {
-        guard let url = FolderPicker.pickerFolder(prompt: "Escolha uma pasta fonte") else { return }
+        guard let url = FolderPicker.pickerFolder(prompt: "Choose source folder") else { return }
         let newSources = resolvedSources + [url]
         rebuildPlan(withSources: newSources, destination: resolvedDestination)
     }
@@ -439,7 +500,7 @@ struct PlanDetailView: View {
     }
     
     private func changeDestination() {
-        guard let url = FolderPicker.pickerFolder(prompt: "Escolha o destino") else { return }
+        guard let url = FolderPicker.pickerFolder(prompt: "Choose destination") else { return }
         rebuildPlan(withSources: resolvedSources, destination: url)
     }
     
@@ -476,7 +537,7 @@ struct PlanDetailView: View {
             resolvedSources = sources
             resolvedDestination = destination
         } catch {
-            resolutionError = "Erro ao atualizar: \(error.localizedDescription)"
+            resolutionError = String(localized: "Update error: \(error.localizedDescription)")
         }
     }
     
@@ -486,14 +547,85 @@ struct PlanDetailView: View {
     }
 }
 
+private struct HistoryRow: View {
+    let entry: HistoryEntry
+    
+    private var iconName: String {
+        switch entry.outcome {
+        case .completed: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .cancelled: return "xmark.circle.fill"
+        }
+    }
+    
+    private var iconColor: Color {
+        switch entry.outcome {
+        case .completed: return Color.dsSuccess
+        case .failed: return Color.dsDanger
+        case .cancelled: return Color.dsTextSecondary
+        }
+    }
+    
+    private var summaryText: String {
+        switch entry.outcome {
+        case .completed:
+            var parts: [String] = []
+            if entry.copiedCount > 0 { parts.append("\(entry.copiedCount) new") }
+            if entry.updatedCount > 0 { parts.append("\(entry.updatedCount) updated") }
+            if entry.orphansRemovedCount > 0 { parts.append("\(entry.orphansRemovedCount) removed") }
+            return parts.isEmpty ? String(localized: "Nothing to do") : parts.joined(separator: ", ")
+        case .failed:
+            return entry.firstFailureMessage ?? String(localized: "Failed")
+        case .cancelled:
+            return String(localized: "Cancelled by user")
+        }
+    }
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: DesignSpacing.md) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .frame(width: 18)
+                .padding(.top, 1)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: DesignSpacing.sm) {
+                    Text(entry.startedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(DesignFont.body)
+                        .foregroundStyle(Color.dsTextPrimary)
+                    
+                    if entry.wasMirrorMode {
+                        Text("SYNC")
+                            .tagStyle(color: Color.dsWarning, background: Color.dsWarningSoft)
+                    }
+                    
+                    Spacer()
+                    
+                    Text(TimeFormatter.humanReadable(seconds: entry.duration))
+                        .font(DesignFont.caption.monospacedDigit())
+                        .foregroundStyle(Color.dsTextSecondary)
+                }
+                
+                Text(summaryText)
+                    .font(DesignFont.caption)
+                    .foregroundStyle(Color.dsTextSecondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, DesignSpacing.xs)
+    }
+}
+
+
 #Preview {
     let store = PlanStore()
-    let coordinator = BackupCoordinator(store: store)
+    let historyStore = HistoryStore()
+    let coordinator = BackupCoordinator(store: store, historyStore: historyStore)
     let plan = BackupPlan(
-        name: "Plano de Exemplo",
+        name: "Sample Plan",
         sourceBookmarks: [],
         destinationBookmark: Data()
     )
-    return PlanDetailView(plan: plan, store: store, coordinator: coordinator)
+    return PlanDetailView(plan: plan, store: store, coordinator: coordinator, historyStore: historyStore)
         .frame(width: 700, height: 600)
 }

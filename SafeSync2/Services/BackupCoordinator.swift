@@ -8,11 +8,13 @@ final class BackupCoordinator {
     private(set) var executions: [BackupExecution] = []
     
     private let store: PlanStore
+    private let historyStore: HistoryStore
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private let maxConcurrent = 3
     
-    init(store: PlanStore) {
+    init(store: PlanStore, historyStore: HistoryStore) {
         self.store = store
+        self.historyStore = historyStore
     }
     
     // MARK: - Queries
@@ -33,9 +35,14 @@ final class BackupCoordinator {
     
     // MARK: - Lifecycle
     
-    func startAnalysis(for plan: BackupPlan) {
-        if execution(forPlanID: plan.id) != nil {
-            return
+    func startAnalysis(for plan: BackupPlan, fromPopover: Bool = false) {
+        if let existing = execution(forPlanID: plan.id) {
+            switch existing.progress.phase {
+            case .queued, .analyzing, .waitingConfirmation, .copying, .finishing:
+                return
+            case .completed, .failed, .cancelled:
+                removeExecution(executionID: existing.id)
+            }
         }
         
         let execution = BackupExecution(
@@ -48,7 +55,8 @@ final class BackupCoordinator {
                 bytesProcessed: 0,
                 bytesTotal: 0,
                 startedAt: Date()
-            )
+            ),
+            originatedFromPopover: fromPopover
         )
         
         executions.append(execution)
@@ -98,6 +106,27 @@ final class BackupCoordinator {
     func cancelExecution(executionID: UUID) {
         runningTasks[executionID]?.cancel()
         runningTasks[executionID] = nil
+        
+        if let execution = executions.first(where: { $0.id == executionID }) {
+            let isCopyingOrFinishing: Bool = {
+                switch execution.progress.phase {
+                case .copying, .finishing: return true
+                default: return false
+                }
+            }()
+            
+            if isCopyingOrFinishing,
+               let plan = store.plans.first(where: { $0.id == execution.planID }) {
+                recordHistory(
+                    executionID: executionID,
+                    plan: plan,
+                    outcome: .cancelled,
+                    report: nil
+                )
+                
+                NotificationService.shared.notifyBackupCancelled(planName: plan.name)
+            }
+        }
         
         if let index = executions.firstIndex(where: { $0.id == executionID }) {
             executions[index].progress.phase = .cancelled
@@ -207,27 +236,60 @@ final class BackupCoordinator {
                 }
             )
             
+            if Task.isCancelled {
+                return
+            }
+            
             updateExecution(id: executionID) { execution in
                 execution.progress.phase = .completed
             }
-
+            
             if let updatedPlan = store.plans.first(where: { $0.id == plan.id }) {
                 store.updatePlan(updatedPlan.withLastRun(Date()))
             }
+            
+            recordHistory(
+                executionID: executionID,
+                plan: plan,
+                outcome: .completed,
+                report: report
+            )
 
-            _ = report
+            NotificationService.shared.notifyBackupCompleted(
+                planName: plan.name,
+                copied: report.copied,
+                updated: report.updated,
+                orphansRemoved: report.orphansRemoved
+            )
 
             dequeueNext()
-
+            
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(5))
                 guard let self else { return }
                 self.removeExecution(executionID: executionID)
             }
         } catch {
-            updateExecution(id: executionID) { execution in
-                execution.progress.phase = .failed("Erro: \(error.localizedDescription)")
+            if Task.isCancelled {
+                return
             }
+            
+            updateExecution(id: executionID) { execution in
+                execution.progress.phase = .failed("Error: \(error.localizedDescription)")
+            }
+            recordHistory(
+                executionID: executionID,
+                plan: plan,
+                outcome: .failed,
+                report: nil,
+                errorMessage: error.localizedDescription
+            )
+
+            NotificationService.shared.notifyBackupFailed(
+                planName: plan.name,
+                errorMessage: error.localizedDescription
+            )
+
             dequeueNext()
         }
         
@@ -235,6 +297,32 @@ final class BackupCoordinator {
     }
     
     // MARK: - Helpers
+    
+    private func recordHistory(
+        executionID: UUID,
+        plan: BackupPlan,
+        outcome: HistoryEntry.Outcome,
+        report: BackupExecutionReport?,
+        errorMessage: String? = nil
+    ) {
+        guard let execution = executions.first(where: { $0.id == executionID }) else { return }
+        
+        let entry = HistoryEntry(
+            planID: plan.id,
+            planName: execution.planName,
+            startedAt: execution.progress.startedAt,
+            finishedAt: Date(),
+            wasMirrorMode: plan.isMirrorMode,
+            outcome: outcome,
+            copiedCount: report?.copied ?? 0,
+            updatedCount: report?.updated ?? 0,
+            orphansRemovedCount: report?.orphansRemoved ?? 0,
+            failureCount: report?.failures.count ?? 0,
+            firstFailureMessage: errorMessage ?? report?.failures.first
+        )
+        
+        historyStore.addEntry(entry)
+    }
     
     private func updateExecution(id: UUID, mutation: (inout BackupExecution) -> Void) {
         if let index = executions.firstIndex(where: { $0.id == id }) {

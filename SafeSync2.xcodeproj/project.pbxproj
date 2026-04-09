@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F3E1CE7F2F8825E700880272 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = F3E1CE7E2F8825E200880272 /* .gitignore */; };
+		F3E1CE812F88261300880272 /* README.md in Sources */ = {isa = PBXBuildFile; fileRef = F3E1CE802F88260F00880272 /* README.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
-		F346F7962F856AAC007F2854 /* SafeSync2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SafeSync2.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F346F7962F856AAC007F2854 /* SafeSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SafeSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F3E1CE7E2F8825E200880272 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		F3E1CE802F88260F00880272 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +39,8 @@
 		F346F78D2F856AAB007F2854 = {
 			isa = PBXGroup;
 			children = (
+				F3E1CE7E2F8825E200880272 /* .gitignore */,
+				F3E1CE802F88260F00880272 /* README.md */,
 				F346F7982F856AAC007F2854 /* SafeSync2 */,
 				F346F7972F856AAC007F2854 /* Products */,
 			);
@@ -40,7 +49,7 @@
 		F346F7972F856AAC007F2854 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F346F7962F856AAC007F2854 /* SafeSync2.app */,
+				F346F7962F856AAC007F2854 /* SafeSync.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +57,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		F346F7952F856AAC007F2854 /* SafeSync2 */ = {
+		F346F7952F856AAC007F2854 /* SafeSync */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F346F7A12F856AAD007F2854 /* Build configuration list for PBXNativeTarget "SafeSync2" */;
+			buildConfigurationList = F346F7A12F856AAD007F2854 /* Build configuration list for PBXNativeTarget "SafeSync" */;
 			buildPhases = (
 				F346F7922F856AAC007F2854 /* Sources */,
 				F346F7932F856AAC007F2854 /* Frameworks */,
@@ -63,11 +72,11 @@
 			fileSystemSynchronizedGroups = (
 				F346F7982F856AAC007F2854 /* SafeSync2 */,
 			);
-			name = SafeSync2;
+			name = SafeSync;
 			packageProductDependencies = (
 			);
 			productName = SafeSync2;
-			productReference = F346F7962F856AAC007F2854 /* SafeSync2.app */;
+			productReference = F346F7962F856AAC007F2854 /* SafeSync.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -91,6 +100,8 @@
 			knownRegions = (
 				en,
 				Base,
+				"pt-BR",
+				es,
 			);
 			mainGroup = F346F78D2F856AAB007F2854;
 			minimizedProjectReferenceProxies = 1;
@@ -99,7 +110,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				F346F7952F856AAC007F2854 /* SafeSync2 */,
+				F346F7952F856AAC007F2854 /* SafeSync */,
 			);
 		};
 /* End PBXProject section */
@@ -109,6 +120,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F3E1CE7F2F8825E700880272 /* .gitignore in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +131,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F3E1CE812F88261300880272 /* README.md in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -185,6 +198,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -242,6 +256,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
 			name = Release;
 		};
@@ -250,6 +265,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_INFOPLIST_LOCALIZATIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -269,13 +285,16 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_CFBundleDisplayName = SafeSync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Caio Fortes. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.caiofortes.SafeSync2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.caiofortes.SafeSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -292,6 +311,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_INFOPLIST_LOCALIZATIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -311,13 +331,16 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_FILE = "";
+				INFOPLIST_KEY_CFBundleDisplayName = SafeSync;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Caio Fortes. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.caiofortes.SafeSync2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.caiofortes.SafeSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -341,7 +364,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F346F7A12F856AAD007F2854 /* Build configuration list for PBXNativeTarget "SafeSync2" */ = {
+		F346F7A12F856AAD007F2854 /* Build configuration list for PBXNativeTarget "SafeSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				F346F7A22F856AAD007F2854 /* Debug */,

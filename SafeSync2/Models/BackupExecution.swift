@@ -14,16 +14,19 @@ struct BackupExecution: Identifiable, Sendable {
     let planName: String
     var progress: BackupProgress
     var previewData: BackupPreviewData?
+    let originatedFromPopover: Bool
     
     init(
         planID: UUID,
         planName: String,
-        progress: BackupProgress
+        progress: BackupProgress,
+        originatedFromPopover: Bool = false
     ) {
         self.id = UUID()
         self.planID = planID
         self.planName = planName
         self.progress = progress
         self.previewData = nil
+        self.originatedFromPopover = originatedFromPopover
     }
 }

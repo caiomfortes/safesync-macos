@@ -1,32 +1,37 @@
-
 import SwiftUI
 
 struct EmptyStateView: View {
     let onCreatePlan: () -> Void
     
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: DesignSpacing.xl) {
             Image(systemName: "externaldrive.badge.plus")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(Color.dsAccent)
             
-            Text("Nenhum plano de backup")
-                .font(.title2)
-                .bold()
-            
-            Text("Crie seu primeiro plano para começar\na fazer backups incrementais.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+            VStack(spacing: DesignSpacing.sm) {
+                Text("No backup plans")
+                    .font(DesignFont.title)
+                    .foregroundStyle(Color.dsTextPrimary)
+                
+                Text("Create your first plan to start making incremental backups.")
+                    .font(DesignFont.body)
+                    .foregroundStyle(Color.dsTextSecondary)
+                    .multilineTextAlignment(.center)
+            }
             
             Button(action: onCreatePlan) {
-                Label("Criar primeiro plano", systemImage: "plus")
+                Label("Create first plan", systemImage: "plus")
+                    .font(DesignFont.headline)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .padding(.top, 8)
+            .tint(Color.dsAccent)
+            .padding(.top, DesignSpacing.sm)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        .padding(DesignSpacing.xxl)
+        .background(Color.dsSurfaceSecondary)
     }
 }
 

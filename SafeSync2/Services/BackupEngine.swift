@@ -92,7 +92,7 @@ actor BackupEngine {
         do {
             values = try source.resourceValues(forKeys: Set(keys))
         } catch {
-            collector.errors.append("Não consegui ler \(source.path): \(error.localizedDescription)")
+            collector.errors.append(String(localized: "Could not read") + ": \(source.lastPathComponent)")
             return
         }
         
@@ -110,7 +110,7 @@ actor BackupEngine {
                     options: [.skipsHiddenFiles]
                 )
             } catch {
-                collector.errors.append("Não consegui listar \(source.path): \(error.localizedDescription)")
+                collector.errors.append(String(localized: "Could not list folder") + ": \(source.lastPathComponent)")
                 return
             }
             
@@ -392,7 +392,7 @@ actor BackupEngine {
         do {
             try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         } catch {
-            collector.failures.append("Não criou diretório \(parent.path): \(error.localizedDescription)")
+            collector.failures.append(String(localized: "Could not create folder") + ": \(parent.lastPathComponent)")
             return false
         }
         
@@ -405,7 +405,7 @@ actor BackupEngine {
         do {
             try fileManager.copyItem(at: source, to: tempTarget)
         } catch {
-            collector.failures.append("Falha ao copiar \(source.path): \(error.localizedDescription)")
+            collector.failures.append(String(localized: "Could not copy") + ": \(source.lastPathComponent)")
             return false
         }
         
@@ -417,7 +417,7 @@ actor BackupEngine {
             }
             return true
         } catch {
-            collector.failures.append("Falha ao finalizar \(target.path): \(error.localizedDescription)")
+            collector.failures.append(String(localized: "Could not finalize") + ": \(target.lastPathComponent)")
             try? fileManager.removeItem(at: tempTarget)
             return false
         }

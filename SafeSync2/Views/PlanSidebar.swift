@@ -13,11 +13,12 @@ struct PlanSidebar: View {
             ForEach(store.plans) { plan in
                 PlanRow(plan: plan)
                     .tag(plan.id)
+                    .listRowSeparator(.hidden)
                     .contextMenu {
                         Button(role: .destructive) {
                             onDeletePlan(plan)
                         } label: {
-                            Label("Apagar", systemImage: "trash")
+                            Label("Delete", systemImage: "trash")
                         }
                     }
             }
@@ -26,8 +27,9 @@ struct PlanSidebar: View {
         .toolbar {
             ToolbarItem {
                 Button(action: onCreatePlan) {
-                    Label("Novo plano", systemImage: "plus")
+                    Label("New plan", systemImage: "plus")
                 }
+                .keyboardShortcut("n", modifiers: [.command])
             }
         }
         .navigationTitle("SafeSync")
@@ -42,44 +44,41 @@ private struct PlanRow: View {
     }
     
     private var iconColor: Color {
-        plan.isMirrorMode ? .orange : .blue
+        plan.isMirrorMode ? Color.dsWarning : Color.dsAccent
     }
     
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: DesignSpacing.md) {
             Image(systemName: iconName)
+                .font(.system(size: 16))
                 .foregroundStyle(iconColor)
-                .frame(width: 20)
+                .frame(width: 22)
             
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: DesignSpacing.xs) {
                     Text(plan.name)
-                        .font(.body)
+                        .font(DesignFont.headline)
+                        .foregroundStyle(Color.dsTextPrimary)
                         .lineLimit(1)
                     
                     if plan.isMirrorMode {
                         Text("SYNC")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.orange.opacity(0.15))
-                            .clipShape(Capsule())
+                            .tagStyle(color: Color.dsWarning, background: Color.dsWarningSoft)
                     }
                 }
                 
                 if let lastRun = plan.lastRunAt {
-                    Text("Último: \(lastRun.formatted(.relative(presentation: .named)))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text(lastRun.formatted(.relative(presentation: .named)))
+                        .font(DesignFont.caption)
+                        .foregroundStyle(Color.dsTextSecondary)
                 } else {
-                    Text("Nunca executado")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("Never run")
+                        .font(DesignFont.caption)
+                        .foregroundStyle(Color.dsTextSecondary)
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, DesignSpacing.xs)
     }
 }
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     let store: PlanStore
     let coordinator: BackupCoordinator
+    let historyStore: HistoryStore
     
     @State private var isChoosingPlanType = false
     @State private var pendingPlanType: PlanType? = nil
@@ -30,9 +31,9 @@ struct ContentView: View {
                         .navigationSplitViewColumnWidth(min: 220, ideal: 260)
                     } detail: {
                         if let selected = store.selectedPlan {
-                            PlanDetailView(plan: selected, store: store, coordinator: coordinator)
+                            PlanDetailView(plan: selected, store: store, coordinator: coordinator, historyStore: historyStore)
                         } else {
-                            Text("Selecione um plano")
+                            Text("Select a plan")
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,22 +78,25 @@ struct ContentView: View {
             }
         }
         .alert(
-            "Apagar plano?",
+            "Delete plan?",
             isPresented: Binding(
                 get: { planPendingDeletion != nil },
                 set: { if !$0 { planPendingDeletion = nil } }
             ),
             presenting: planPendingDeletion
         ) { plan in
-            Button("Apagar", role: .destructive) {
-                store.removePlan(id: plan.id)
+            Button("Delete", role: .destructive) {
+                if let plan = planPendingDeletion {
+                    historyStore.removeEntries(forPlanID: plan.id)
+                    store.removePlan(id: plan.id)
+                }
                 planPendingDeletion = nil
             }
-            Button("Cancelar", role: .cancel) {
+            Button("Cancel", role: .cancel) {
                 planPendingDeletion = nil
             }
         } message: { plan in
-            Text("Tem certeza que deseja apagar o plano \"\(plan.name)\"? Essa ação não pode ser desfeita. Os arquivos já copiados no destino não serão afetados.")
+            Text("Are you sure you want to delete plan \"\(plan.name)\"? This action cannot be undone. Files already copied to the destination will not be affected.")
         }
     }
     
@@ -114,6 +118,7 @@ struct ContentView: View {
 
 #Preview {
     let store = PlanStore()
-    let coordinator = BackupCoordinator(store: store)
-    return ContentView(store: store, coordinator: coordinator)
+    let historyStore = HistoryStore()
+    let coordinator = BackupCoordinator(store: store, historyStore: historyStore)
+    return ContentView(store: store, coordinator: coordinator, historyStore: historyStore)
 }

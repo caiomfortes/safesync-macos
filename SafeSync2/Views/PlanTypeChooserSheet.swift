@@ -1,11 +1,3 @@
-//
-//  PlanTypeChooserSheet.swift
-//  SafeSync2
-//
-//  Created by Caio Gabriel de Moura Fortes on 08/04/26.
-//
-
-
 import SwiftUI
 
 struct PlanTypeChooserSheet: View {
@@ -14,40 +6,43 @@ struct PlanTypeChooserSheet: View {
     let onChooseMirror: () -> Void
     
     var body: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 6) {
-                Text("Que tipo de plano você quer criar?")
-                    .font(.title2)
-                    .bold()
-                Text("Escolha o comportamento que melhor se adequa ao seu uso.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: DesignSpacing.xl) {
+            VStack(spacing: DesignSpacing.sm) {
+                Text("What kind of plan do you want to create?")
+                    .font(DesignFont.title)
+                    .foregroundStyle(Color.dsTextPrimary)
+                Text("Choose the behavior that best fits your needs.")
+                    .font(DesignFont.body)
+                    .foregroundStyle(Color.dsTextSecondary)
             }
-            .padding(.top, 8)
+            .padding(.top, DesignSpacing.sm)
+            .multilineTextAlignment(.center)
             
-            HStack(spacing: 16) {
+            HStack(spacing: DesignSpacing.lg) {
                 planTypeCard(
                     icon: "externaldrive.badge.plus",
-                    iconColor: .blue,
+                    iconColor: Color.dsAccent,
                     title: "Backup",
-                    description: "Copia arquivos novos e atualizados. Nunca remove nada do destino.",
+                    description: "Copies new and updated files. Never removes anything from the destination.",
                     action: onChooseBackup
                 )
                 
                 planTypeCard(
                     icon: "arrow.triangle.2.circlepath",
-                    iconColor: .orange,
-                    title: "Sincronização",
-                    description: "Espelha a origem no destino. Arquivos órfãos são movidos para o Lixo.",
+                    iconColor: Color.dsWarning,
+                    title: "Sync",
+                    description: "Mirrors source to destination. Orphan files are moved to Trash.",
                     action: onChooseMirror
                 )
             }
             
-            Button("Cancelar", action: onCancel)
+            Button("Cancel", action: onCancel)
                 .keyboardShortcut(.escape)
+                .foregroundStyle(Color.dsTextSecondary)
         }
-        .padding(28)
+        .padding(DesignSpacing.xxl)
         .frame(width: 600)
+        .background(Color.dsSurfaceSecondary)
     }
     
     private func planTypeCard(
@@ -58,31 +53,25 @@ struct PlanTypeChooserSheet: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 12) {
+            VStack(spacing: DesignSpacing.md) {
                 Image(systemName: icon)
-                    .font(.system(size: 42))
+                    .font(.system(size: 40, weight: .light))
                     .foregroundStyle(iconColor)
                     .frame(height: 56)
                 
                 Text(title)
-                    .font(.title3)
-                    .bold()
-                    .foregroundStyle(.primary)
+                    .font(DesignFont.title)
+                    .foregroundStyle(Color.dsTextPrimary)
                 
                 Text(description)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(DesignFont.body)
+                    .foregroundStyle(Color.dsTextSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity)
-            .padding(20)
-            .background(.background.secondary)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(.separator, lineWidth: 1)
-            }
+            .padding(DesignSpacing.xl)
+            .cardStyle()
         }
         .buttonStyle(.plain)
     }
